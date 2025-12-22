@@ -26,7 +26,7 @@ npm install
 cp .env.example .env
 # Editar .env con la URL del backend
 
-# Ejecutar en desarrollo
+# Ejecutar en desarroll
 npm run dev
 ```
 
