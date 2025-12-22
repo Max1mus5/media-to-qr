@@ -3,7 +3,7 @@ import { AiOutlineCloudUpload } from 'react-icons/ai'
 import QRCode from 'react-qr-code'
 import './App.css'
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
 
 function App() {
   const [status, setStatus] = useState('idle') // idle, uploading, success, error
