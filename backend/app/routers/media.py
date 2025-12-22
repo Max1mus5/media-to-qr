@@ -1,0 +1,198 @@
+import os
+from uuid import UUID
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request
+from fastapi.responses import StreamingResponse
+from io import BytesIO
+from psycopg.rows import dict_row
+
+from app.database import get_db_connection
+from app.models import MediaFile
+
+router = APIRouter()
+
+# Configuración
+MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 52428800))  # 50MB default
+
+ALLOWED_CONTENT_TYPES = {
+    # Audio
+    "audio/mpeg", "audio/mp3", "audio/wav", "audio/ogg", "audio/aac",
+    "audio/x-m4a", "audio/flac", "audio/webm",
+    # Video
+    "video/mp4", "video/mpeg", "video/quicktime", "video/x-msvideo",
+    "video/webm", "video/ogg",
+    # Imágenes
+    "image/jpeg", "image/png", "image/gif", "image/webp", "image/svg+xml"
+}
+
+
+@router.post("/upload")
+async def upload_file(request: Request, file: UploadFile = File(...)):
+    """
+    Sube un archivo multimedia y retorna la URL para acceder a él.
+    
+    - **file**: Archivo multimedia (audio, video o imagen)
+    - **Returns**: JSON con id y url del archivo
+    """
+    
+    # Validar tipo de contenido
+    content_type = file.content_type
+    if content_type not in ALLOWED_CONTENT_TYPES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Tipo de archivo no permitido. Tipos válidos: audio/*, video/*, image/*"
+        )
+    
+    # Leer archivo con límite
+    file_data = await file.read(MAX_FILE_SIZE + 1)  # Leer un byte extra para detectar si excede
+    file_size = len(file_data)
+    
+    # Validar tamaño ANTES de procesar
+    if file_size > MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Archivo demasiado grande ({file_size / 1024 / 1024:.1f}MB). Máximo permitido: {MAX_FILE_SIZE / 1024 / 1024:.0f}MB"
+        )
+    
+    if file_size == 0:
+        raise HTTPException(
+            status_code=400,
+            detail="El archivo está vacío"
+        )
+    
+    # Guardar en base de datos
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                INSERT INTO media_store (file_data, content_type, filename, file_size)
+                VALUES (%s, %s, %s, %s)
+                RETURNING id
+                """,
+                (file_data, content_type, file.filename, file_size)
+            )
+            record = cur.fetchone()
+            file_id = record['id']
+    
+    # Generar URL
+    base_url = str(request.base_url).rstrip('/')
+    media_url = f"{base_url}/api/v1/media/{file_id}"
+    
+    return {
+        "id": str(file_id),
+        "url": media_url,
+        "filename": file.filename,
+        "content_type": content_type,
+        "size": file_size
+    }
+
+
+@router.get("/media/{file_id}")
+async def get_media(file_id: UUID):
+    """
+    Recupera y sirve un archivo multimedia por su ID.
+    
+    - **file_id**: UUID del archivo
+    - **Returns**: StreamingResponse con el archivo binario
+    """
+    
+    # Buscar archivo en base de datos
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT file_data, content_type, filename
+                FROM media_store
+                WHERE id = %s
+                """,
+                (file_id,)
+            )
+            record = cur.fetchone()
+    
+    if not record:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    # Crear stream del archivo (convertir memoryview a bytes si es necesario)
+    file_data_bytes = bytes(record['file_data'])
+    file_stream = BytesIO(file_data_bytes)
+    
+    # Configurar headers para reproducción en navegador
+    headers = {
+        "Content-Disposition": f'inline; filename="{record["filename"]}"',
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "public, max-age=31536000"  # Cache por 1 año
+    }
+    
+    return StreamingResponse(
+        file_stream,
+        media_type=record['content_type'],
+        headers=headers
+    )
+
+
+@router.get("/stats")
+async def get_stats():
+    """Obtiene estadísticas básicas del sistema"""
+    
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("""
+                SELECT 
+                    COUNT(*) as total_files,
+                    SUM(file_size) as total_size,
+                    AVG(file_size) as avg_size,
+                    MAX(created_at) as last_upload
+                FROM media_store
+            """)
+            stats = cur.fetchone()
+    
+    return {
+        "total_files": stats['total_files'] if stats['total_files'] else 0,
+        "total_size_mb": round(stats['total_size'] / 1024 / 1024, 2) if stats['total_size'] else 0,
+        "avg_size_kb": round(stats['avg_size'] / 1024, 2) if stats['avg_size'] else 0,
+        "last_upload": stats['last_upload'].isoformat() if stats['last_upload'] else None
+    }
+
+
+@router.delete("/media/{file_id}")
+async def delete_media(file_id: UUID):
+    """
+    Elimina un archivo multimedia por su ID.
+    
+    - **file_id**: UUID del archivo a eliminar
+    - **Returns**: Confirmación de eliminación
+    """
+    
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            # Verificar que existe
+            cur.execute(
+                "SELECT id FROM media_store WHERE id = %s",
+                (file_id,)
+            )
+            if not cur.fetchone():
+                raise HTTPException(status_code=404, detail="Archivo no encontrado")
+            
+            # Eliminar
+            cur.execute(
+                "DELETE FROM media_store WHERE id = %s",
+                (file_id,)
+            )
+    
+    return {"message": "Archivo eliminado exitosamente", "id": str(file_id)}
+
+
+@router.delete("/cleanup/all")
+async def cleanup_all():
+    """
+    PELIGRO: Elimina TODOS los archivos de la base de datos.
+    Usar solo para limpieza de desarrollo.
+    """
+    
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute("SELECT COUNT(*) as count FROM media_store")
+            count = cur.fetchone()['count']
+            
+            cur.execute("TRUNCATE TABLE media_store")
+    
+    return {"message": f"Se eliminaron {count} archivos", "count": count}
