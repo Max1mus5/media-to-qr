@@ -1,0 +1,17 @@
+<!-- Placeholder SVG Icon 192x192 -->
+<svg width="192" height="192" xmlns="http://www.w3.org/2000/svg">
+  <rect width="192" height="192" fill="#ff4444"/>
+  <rect x="48" y="48" width="96" height="96" fill="white" rx="8"/>
+  <g fill="#ff4444">
+    <!-- QR-like pattern -->
+    <rect x="60" y="60" width="20" height="20"/>
+    <rect x="60" y="100" width="20" height="20"/>
+    <rect x="100" y="60" width="20" height="20"/>
+    <rect x="112" y="60" width="20" height="20"/>
+    <rect x="112" y="100" width="20" height="20"/>
+    <rect x="72" y="72" width="8" height="8" fill="white"/>
+    <rect x="104" y="72" width="8" height="8" fill="white"/>
+    <rect x="72" y="104" width="8" height="8" fill="white"/>
+  </g>
+  <text x="96" y="165" font-family="Arial" font-size="24" font-weight="bold" fill="white" text-anchor="middle">MediaQR</text>
+</svg>

@@ -5,6 +5,33 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
+  position: relative;
+}
+
+.history-button {
+  position: fixed;
+  top: 20px;
+  right: 20px;
+  background: rgba(255, 68, 68, 0.9);
+  border: none;
+  color: white;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  font-size: 24px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 20px rgba(255, 68, 68, 0.4);
+  transition: all 0.3s;
+  z-index: 1000;
+}
+
+.history-button:hover {
+  background: #cc0000;
+  transform: scale(1.1);
+  box-shadow: 0 6px 25px rgba(255, 68, 68, 0.6);
 }
 
 .container {
@@ -248,6 +275,75 @@
   font-size: 0.9rem;
 }
 
+/* QR Download Section */
+.qr-download-section {
+  margin: 20px 0;
+  padding: 20px;
+  background: rgba(255, 68, 68, 0.05);
+  border-radius: 12px;
+  border: 1px solid rgba(255, 68, 68, 0.2);
+}
+
+.qr-size-label {
+  display: block;
+  margin-bottom: 12px;
+  color: #333;
+  font-weight: 500;
+  font-size: 14px;
+}
+
+.qr-size-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  justify-content: center;
+}
+
+.size-btn {
+  padding: 8px 16px;
+  border: 2px solid rgba(255, 68, 68, 0.3);
+  background: white;
+  color: #333;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.size-btn:hover {
+  border-color: #ff4444;
+  background: rgba(255, 68, 68, 0.05);
+}
+
+.size-btn.active {
+  background: #ff4444;
+  color: white;
+  border-color: #ff4444;
+}
+
+.download-qr-button {
+  width: 100%;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, #ff4444 0%, #cc0000 100%);
+  color: white;
+  border: none;
+  border-radius: 12px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.download-qr-button:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 30px rgba(255, 68, 68, 0.4);
+}
+
 /* Responsive */
 @media (max-width: 600px) {
   .container {
@@ -259,8 +355,8 @@
   }
 
   .qr-code {
-    width: 200px !important;
-    height: 200px !important;
+    width: 150px !important;
+    height: 150px !important;
   }
 
   .url-container {
@@ -268,6 +364,22 @@
   }
 
   .copy-button {
+    width: 100%;
+  }
+
+  .history-button {
+    width: 45px;
+    height: 45px;
+    font-size: 20px;
+    top: 15px;
+    right: 15px;
+  }
+
+  .qr-size-selector {
+    flex-direction: column;
+  }
+
+  .size-btn {
     width: 100%;
   }
 }

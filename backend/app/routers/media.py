@@ -1,6 +1,6 @@
 import os
 from uuid import UUID
-from fastapi import APIRouter, UploadFile, File, HTTPException, Request
+from fastapi import APIRouter, UploadFile, File, HTTPException, Request, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from io import BytesIO
 from psycopg.rows import dict_row
@@ -87,12 +87,13 @@ async def upload_file(request: Request, file: UploadFile = File(...)):
 
 
 @router.get("/media/{file_id}")
-async def get_media(file_id: UUID):
+async def get_media(file_id: UUID, background_tasks: BackgroundTasks):
     """
     Recupera y sirve un archivo multimedia por su ID.
+    El contador de accesos se incrementa en segundo plano para no bloquear la entrega.
     
     - **file_id**: UUID del archivo
-    - **Returns**: StreamingResponse con el archivo binario
+    - **Returns**: StreamingResponse con el archivo binario o mensaje de error
     """
     
     # Buscar archivo en base de datos
@@ -109,7 +110,13 @@ async def get_media(file_id: UUID):
             record = cur.fetchone()
     
     if not record:
-        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+        raise HTTPException(
+            status_code=404, 
+            detail="Este archivo ha sido eliminado o no existe. El QR compartido ya no es válido."
+        )
+    
+    # Incrementar contador en segundo plano (no bloquea la respuesta)
+    background_tasks.add_task(increment_access_count, file_id)
     
     # Crear stream del archivo (convertir memoryview a bytes si es necesario)
     file_data_bytes = bytes(record['file_data'])
@@ -127,6 +134,25 @@ async def get_media(file_id: UUID):
         media_type=record['content_type'],
         headers=headers
     )
+
+
+def increment_access_count(file_id: UUID):
+    """Incrementa el contador de accesos en segundo plano"""
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    UPDATE media_store 
+                    SET access_count = access_count + 1 
+                    WHERE id = %s
+                    """,
+                    (file_id,)
+                )
+    except Exception as e:
+        # Log error pero no afecta la entrega del contenido
+        print(f"Error incrementando contador para {file_id}: {e}")
+
 
 
 @router.get("/stats")
@@ -178,6 +204,39 @@ async def get_storage_info():
         "available_mb": available_mb,
         "total_mb": TOTAL_STORAGE_MB,
         "percentage": percentage
+    }
+
+
+@router.get("/media/{file_id}/info")
+async def get_media_info(file_id: UUID):
+    """
+    Obtiene información de un archivo sin descargarlo (incluyendo contador de accesos).
+    
+    - **file_id**: UUID del archivo
+    - **Returns**: JSON con información del archivo
+    """
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            cur.execute(
+                """
+                SELECT id, filename, content_type, file_size, access_count, created_at
+                FROM media_store
+                WHERE id = %s
+                """,
+                (file_id,)
+            )
+            record = cur.fetchone()
+    
+    if not record:
+        raise HTTPException(status_code=404, detail="Archivo no encontrado")
+    
+    return {
+        "id": str(record['id']),
+        "filename": record['filename'],
+        "content_type": record['content_type'],
+        "size": record['file_size'],
+        "access_count": record['access_count'],
+        "created_at": record['created_at'].isoformat()
     }
 
 
