@@ -153,6 +153,34 @@ async def get_stats():
     }
 
 
+@router.get("/storage")
+async def get_storage_info():
+    """
+    Obtiene información del almacenamiento usado.
+    
+    - **Returns**: JSON con espacio usado en MB, total disponible y porcentaje
+    """
+    TOTAL_STORAGE_MB = 500  # Límite total de almacenamiento en MB
+    
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            # Calcular espacio usado total
+            cur.execute("SELECT COALESCE(SUM(file_size), 0) as total_bytes FROM media_store")
+            result = cur.fetchone()
+            total_bytes = result['total_bytes']
+    
+    used_mb = round(total_bytes / 1024 / 1024, 2)
+    available_mb = round(TOTAL_STORAGE_MB - used_mb, 2)
+    percentage = round((used_mb / TOTAL_STORAGE_MB) * 100, 2)
+    
+    return {
+        "used_mb": used_mb,
+        "available_mb": available_mb,
+        "total_mb": TOTAL_STORAGE_MB,
+        "percentage": percentage
+    }
+
+
 @router.delete("/media/{file_id}")
 async def delete_media(file_id: UUID):
     """

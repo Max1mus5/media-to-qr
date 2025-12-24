@@ -1,6 +1,7 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { AiOutlineCloudUpload } from 'react-icons/ai'
 import QRCode from 'react-qr-code'
+import StorageBar from './StorageBar'
 import './App.css'
 
 const API_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:8000'
@@ -10,6 +11,7 @@ function App() {
   const [mediaUrl, setMediaUrl] = useState('')
   const [error, setError] = useState('')
   const [fileInfo, setFileInfo] = useState(null)
+  const storageUpdateTrigger = useRef(0)
 
   const handleFileSelect = async (event) => {
     const file = event.target.files?.[0]
@@ -57,6 +59,9 @@ function App() {
         type: data.content_type
       })
       setStatus('success')
+      
+      // Actualizar barra de almacenamiento
+      storageUpdateTrigger.current += 1
     } catch (err) {
       setError(err.message)
       setStatus('error')
@@ -158,6 +163,8 @@ function App() {
       <footer className="footer">
         <p>Escanea el QR para reproducir el archivo en cualquier dispositivo</p>
       </footer>
+
+      <StorageBar apiUrl={`${API_URL}/api/v1`} key={storageUpdateTrigger.current} />
     </div>
   )
 }
