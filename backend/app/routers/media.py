@@ -1,7 +1,7 @@
 import os
 from uuid import UUID
 from fastapi import APIRouter, UploadFile, File, HTTPException, Request, BackgroundTasks
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, Response
 from io import BytesIO
 from psycopg.rows import dict_row
 
@@ -87,14 +87,10 @@ async def upload_file(request: Request, file: UploadFile = File(...)):
                 raise HTTPException(status_code=500, detail="Error al generar ID único")
             continue
     
-    # Generar URL corta
-    base_url = str(request.base_url).rstrip('/')
-    media_url = f"{base_url}/q/{short_id}"
-    
+    # Retornar solo el short_id, el frontend construye la URL
     return {
         "id": str(file_id),
         "short_id": short_id,
-        "url": media_url,
         "filename": file.filename,
         "content_type": content_type,
         "size": file_size

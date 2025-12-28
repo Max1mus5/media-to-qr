@@ -56,13 +56,17 @@ function App() {
       }
 
       const data = await response.json()
-      setMediaUrl(data.url)
+      
+      // Construir URL del backend para acceso directo al archivo
+      const mediaUrl = `${API_URL}/q/${data.short_id}`
+      
+      setMediaUrl(mediaUrl)
       const info = {
         id: data.short_id || data.id, // Priorizar short_id
         filename: data.filename,
         size: (data.size / 1024 / 1024).toFixed(2),
         type: data.content_type,
-        url: data.url,
+        url: mediaUrl,
         uploadedAt: new Date().toISOString()
       }
       setFileInfo(info)
