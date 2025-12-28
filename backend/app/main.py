@@ -39,6 +39,8 @@ app.add_middleware(
 
 # Routers
 app.include_router(media.router, prefix="/api/v1", tags=["media"])
+# Incluir rutas cortas sin prefijo para QR mínimos
+app.include_router(media.short_router, tags=["short-urls"])
 
 @app.get("/")
 async def root():
@@ -47,7 +49,8 @@ async def root():
         "version": "1.0.0",
         "endpoints": {
             "upload": "/api/v1/upload",
-            "media": "/api/v1/media/{uuid}"
+            "media": "/api/v1/media/{uuid}",
+            "short": "/q/{short_id}"
         }
     }
 

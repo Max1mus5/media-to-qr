@@ -30,6 +30,7 @@ def init_db():
     """Inicializa la base de datos y crea la tabla si no existe"""
     with get_db_connection() as conn:
         with conn.cursor() as cur:
+            # Crear tabla base
             cur.execute("""
                 CREATE TABLE IF NOT EXISTS media_store (
                     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -37,13 +38,17 @@ def init_db():
                     content_type VARCHAR(100) NOT NULL,
                     filename VARCHAR(255),
                     file_size BIGINT,
-                    access_count INTEGER DEFAULT 0,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
-                
+            """)
+            
+            # Índice en created_at
+            cur.execute("""
                 CREATE INDEX IF NOT EXISTS idx_media_created_at ON media_store(created_at);
-                
-                -- Agregar columna access_count si no existe (para bases de datos existentes)
+            """)
+            
+            # Migración: Agregar columna access_count si no existe
+            cur.execute("""
                 DO $$ 
                 BEGIN
                     IF NOT EXISTS (
@@ -53,6 +58,24 @@ def init_db():
                         ALTER TABLE media_store ADD COLUMN access_count INTEGER DEFAULT 0;
                     END IF;
                 END $$;
+            """)
+            
+            # Migración: Agregar columna short_id si no existe
+            cur.execute("""
+                DO $$ 
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM information_schema.columns 
+                        WHERE table_name='media_store' AND column_name='short_id'
+                    ) THEN
+                        ALTER TABLE media_store ADD COLUMN short_id VARCHAR(8) UNIQUE;
+                    END IF;
+                END $$;
+            """)
+            
+            # Crear índice en short_id (solo si no existe)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_media_short_id ON media_store(short_id);
             """)
 
 def close_db():

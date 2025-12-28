@@ -58,7 +58,7 @@ function App() {
       const data = await response.json()
       setMediaUrl(data.url)
       const info = {
-        id: data.id,
+        id: data.short_id || data.id, // Priorizar short_id
         filename: data.filename,
         size: (data.size / 1024 / 1024).toFixed(2),
         type: data.content_type,

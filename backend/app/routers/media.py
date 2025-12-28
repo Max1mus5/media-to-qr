@@ -7,8 +7,11 @@ from psycopg.rows import dict_row
 
 from app.database import get_db_connection
 from app.models import MediaFile
+from app.utils import generate_short_id, is_valid_uuid
+import uuid
 
 router = APIRouter()
+short_router = APIRouter()  # Router sin prefijo para URLs cortas
 
 # Configuración
 MAX_FILE_SIZE = int(os.getenv("MAX_FILE_SIZE", 52428800))  # 50MB default
@@ -60,30 +63,90 @@ async def upload_file(request: Request, file: UploadFile = File(...)):
         )
     
     # Guardar en base de datos
-    with get_db_connection() as conn:
-        with conn.cursor(row_factory=dict_row) as cur:
-            cur.execute(
-                """
-                INSERT INTO media_store (file_data, content_type, filename, file_size)
-                VALUES (%s, %s, %s, %s)
-                RETURNING id
-                """,
-                (file_data, content_type, file.filename, file_size)
-            )
-            record = cur.fetchone()
-            file_id = record['id']
+    max_retries = 5
+    for attempt in range(max_retries):
+        short_id = generate_short_id(6)
+        
+        try:
+            with get_db_connection() as conn:
+                with conn.cursor(row_factory=dict_row) as cur:
+                    cur.execute(
+                        """
+                        INSERT INTO media_store (short_id, file_data, content_type, filename, file_size)
+                        VALUES (%s, %s, %s, %s, %s)
+                        RETURNING id, short_id
+                        """,
+                        (short_id, file_data, content_type, file.filename, file_size)
+                    )
+                    record = cur.fetchone()
+                    file_id = record['id']
+                    short_id = record['short_id']
+            break
+        except Exception as e:
+            if attempt == max_retries - 1:
+                raise HTTPException(status_code=500, detail="Error al generar ID único")
+            continue
     
-    # Generar URL
+    # Generar URL corta
     base_url = str(request.base_url).rstrip('/')
-    media_url = f"{base_url}/api/v1/media/{file_id}"
+    media_url = f"{base_url}/q/{short_id}"
     
     return {
         "id": str(file_id),
+        "short_id": short_id,
         "url": media_url,
         "filename": file.filename,
         "content_type": content_type,
         "size": file_size
     }
+
+
+@short_router.get("/q/{resource_id}")
+async def get_media_short(resource_id: str, background_tasks: BackgroundTasks):
+    """
+    Endpoint optimizado para URLs cortas. Soporta short_id (6 chars) y UUID (fallback).
+    
+    - **resource_id**: short_id (6 caracteres Base62) o UUID legacy
+    - **Returns**: Response con el archivo binario o 404
+    """
+    
+    with get_db_connection() as conn:
+        with conn.cursor(row_factory=dict_row) as cur:
+            # Intentar buscar por short_id primero
+            cur.execute(
+                "SELECT id, file_data, content_type, filename FROM media_store WHERE short_id = %s",
+                (resource_id,)
+            )
+            record = cur.fetchone()
+            
+            # Fallback: buscar por UUID si el formato es válido
+            if not record and is_valid_uuid(resource_id):
+                try:
+                    file_uuid = uuid.UUID(resource_id)
+                    cur.execute(
+                        "SELECT id, file_data, content_type, filename FROM media_store WHERE id = %s",
+                        (file_uuid,)
+                    )
+                    record = cur.fetchone()
+                except ValueError:
+                    pass
+            
+            if not record:
+                raise HTTPException(status_code=404, detail="Archivo no encontrado")
+            
+            file_id = record['id']
+            file_data = record['file_data']
+            content_type = record['content_type']
+            filename = record['filename']
+    
+    # Incrementar contador en segundo plano
+    background_tasks.add_task(increment_access_count, file_id)
+    
+    return Response(
+        content=bytes(file_data),
+        media_type=content_type,
+        headers={"Content-Disposition": f"inline; filename={filename}"}
+    )
 
 
 @router.get("/media/{file_id}")
@@ -208,30 +271,46 @@ async def get_storage_info():
 
 
 @router.get("/media/{file_id}/info")
-async def get_media_info(file_id: UUID):
+async def get_media_info(file_id: str):
     """
-    Obtiene información de un archivo sin descargarlo (incluyendo contador de accesos).
+    Obtiene información de un archivo sin descargarlo (soporta short_id y UUID).
     
-    - **file_id**: UUID del archivo
+    - **file_id**: short_id o UUID del archivo
     - **Returns**: JSON con información del archivo
     """
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
+            # Intentar buscar por short_id primero
             cur.execute(
                 """
-                SELECT id, filename, content_type, file_size, access_count, created_at
-                FROM media_store
-                WHERE id = %s
+                SELECT id, short_id, content_type, filename, file_size, access_count, created_at
+                FROM media_store WHERE short_id = %s
                 """,
                 (file_id,)
             )
             record = cur.fetchone()
+            
+            # Fallback: buscar por UUID si el formato es válido
+            if not record and is_valid_uuid(file_id):
+                try:
+                    file_uuid = uuid.UUID(file_id)
+                    cur.execute(
+                        """
+                        SELECT id, short_id, content_type, filename, file_size, access_count, created_at
+                        FROM media_store WHERE id = %s
+                        """,
+                        (file_uuid,)
+                    )
+                    record = cur.fetchone()
+                except ValueError:
+                    pass
     
     if not record:
         raise HTTPException(status_code=404, detail="Archivo no encontrado")
     
     return {
         "id": str(record['id']),
+        "short_id": record['short_id'],
         "filename": record['filename'],
         "content_type": record['content_type'],
         "size": record['file_size'],
@@ -241,28 +320,44 @@ async def get_media_info(file_id: UUID):
 
 
 @router.delete("/media/{file_id}")
-async def delete_media(file_id: UUID):
+async def delete_media(file_id: str):
     """
-    Elimina un archivo multimedia por su ID.
+    Elimina un archivo multimedia por su ID (soporta short_id y UUID).
     
-    - **file_id**: UUID del archivo a eliminar
+    - **file_id**: short_id o UUID del archivo a eliminar
     - **Returns**: Confirmación de eliminación
     """
     
     with get_db_connection() as conn:
         with conn.cursor(row_factory=dict_row) as cur:
-            # Verificar que existe
+            # Intentar buscar por short_id primero
             cur.execute(
-                "SELECT id FROM media_store WHERE id = %s",
+                "SELECT id FROM media_store WHERE short_id = %s",
                 (file_id,)
             )
-            if not cur.fetchone():
+            record = cur.fetchone()
+            
+            # Fallback: buscar por UUID si el formato es válido
+            if not record and is_valid_uuid(file_id):
+                try:
+                    file_uuid = uuid.UUID(file_id)
+                    cur.execute(
+                        "SELECT id FROM media_store WHERE id = %s",
+                        (file_uuid,)
+                    )
+                    record = cur.fetchone()
+                except ValueError:
+                    pass
+            
+            if not record:
                 raise HTTPException(status_code=404, detail="Archivo no encontrado")
+            
+            db_file_id = record['id']
             
             # Eliminar
             cur.execute(
                 "DELETE FROM media_store WHERE id = %s",
-                (file_id,)
+                (db_file_id,)
             )
     
     return {"message": "Archivo eliminado exitosamente", "id": str(file_id)}
