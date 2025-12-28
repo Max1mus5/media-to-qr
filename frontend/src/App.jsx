@@ -210,7 +210,10 @@ function App() {
               <QRCode 
                 value={mediaUrl} 
                 size={180}
-                level="H"
+                level="L"
+                fgColor="#1a1a1a"
+                bgColor="#ffffff"
+                includeMargin={false}
                 className="qr-code"
               />
             </div>

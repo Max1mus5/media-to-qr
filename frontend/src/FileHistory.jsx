@@ -118,7 +118,9 @@ const FileHistory = ({ apiUrl, onClose, onDelete }) => {
                     <QRCode 
                       value={file.url} 
                       size={80}
-                      level="M"
+                      level="L"
+                      fgColor="#1a1a1a"
+                      includeMargin={false}
                     />
                   </div>
                   <div className="history-item-info">
@@ -177,7 +179,9 @@ const FileHistory = ({ apiUrl, onClose, onDelete }) => {
               <QRCode 
                 value={selectedFile.url} 
                 size={300}
-                level="H"
+                level="L"
+                fgColor="#1a1a1a"
+                includeMargin={false}
               />
               <p className="preview-filename">{selectedFile.filename}</p>
               <button 

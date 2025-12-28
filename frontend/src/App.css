@@ -164,6 +164,17 @@
   display: block;
 }
 
+/* Estilo redondeado para los cuadrados del QR */
+.qr-code svg path {
+  rx: 2;
+  ry: 2;
+}
+
+.qr-code svg rect {
+  rx: 2;
+  ry: 2;
+}
+
 .file-info {
   text-align: center;
   padding: 15px;
